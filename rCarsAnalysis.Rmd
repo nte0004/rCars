@@ -1,0 +1,257 @@
+---
+title: "Data Analysis of Cars"
+author: "Nolan Evans"
+date: '2022-04-17'
+output: 
+  prettydoc::html_pretty:
+    theme: architects
+    highlight: github
+    toc: true
+---
+
+```{r, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(GGally)
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+big_epa_cars <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-10-15/big_epa_cars.csv") %>%
+  mutate(Fuel = ifelse(cityE > 0, "Hybrid", "Gas"))
+```
+
+## Introduction
+
+The data set, called 'big_epa_cars' comes from TidyTuesday's github page and is a collection of data from the Environmental Protection Agency (EPA) that it contains up to 84 observations about nearly 42,000 cars going all the way back to the 1980s. 
+
+-The full data dictionary from the EPA can be found at the following link: https://www.fueleconomy.gov/feg/ws/index.shtml#fuelType1
+
+The first part, 'data visualization', explores various aspects of cars and their relationship with fuel efficiency (MPG).
+
+The second part, 'CO2 Emissions and Gas Type', test whether or not there is a different in Carbon Dioxide (co2) emissions amongst Regular and Premium gas.
+
+Finally, for the last part I will make a model to predict Highway MPG using a couple factors given in the data set.
+
+## Data Visualization
+```{r, fig.align='center',echo=FALSE, message = FALSE}
+big_epa_cars %>%
+  ggplot(aes(highway08, city08, shape = Fuel, color = Fuel)) +
+  geom_point() +
+  geom_abline(color = "black") +
+  expand_limits(x=0,y=0) +
+  labs(x= "Highway MPG",
+       y = "City MPG" , 
+       title = "Fuel Effeciency between City and Highway")
+big_epa_cars %>%
+  select(highway08,city08,Fuel) %>%
+  ggpairs(aes(color = Fuel), columnLabels = c("Highway MPG","City MPG", "Fuel"))
+```
+
+Since hardly any of data points are hybrid cars, I will only be using the data for gas powered cars henceforth.
+
+### Boxplots
+```{r, fig.align='center',echo = FALSE}
+highwaytype <- big_epa_cars %>%
+  filter(highwayE == 0) %>%
+  mutate(VClass = fct_lump(VClass, 5), #Top 5 + others
+         VClass = fct_reorder(VClass, highway08))
+highwaytype %>%
+  ggplot(aes(VClass, highway08)) +
+  geom_boxplot() +
+  coord_flip() +
+  expand_limits(x=0,y=0) +
+  labs(x = "Vehicle Type",
+       y = "Highway MPG")
+big_epa_cars %>%
+  filter(highwayE == 0, !is.na(drive)) %>%
+  mutate(drive = fct_lump(drive, 6), #Top 8 + others
+         drive = fct_reorder(drive, highway08)) %>%
+  ggplot(aes(drive, highway08)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x = "Drive",
+       y = "Highway MPG")
+big_epa_cars %>%
+  filter(highwayE == 0) %>%
+  mutate(make = fct_lump(make, 15), #Top 8 + others
+         make = fct_reorder(make, highway08)) %>%
+  ggplot(aes(make, highway08)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x = "Make",
+       y = "Highway MPG")
+big_epa_cars %>%
+  filter(highwayE == 0, !is.na(cylinders)) %>%
+  ggplot(aes(cylinders, highway08, group = cylinders)) +
+  geom_boxplot() +
+  labs(x = "Number of Cylinders",
+       y = "Highway MPG")
+```
+
+### Scatter Plots
+
+```{r, fig.align='center',echo=FALSE}
+big_epa_cars %>%
+  filter(highwayE == 0, !is.na(displ)) %>%
+  mutate(VClass = fct_lump(VClass, 5)) %>%
+  ggplot(aes(displ, highway08)) +
+  geom_point() +
+  labs(x = "Displacement (Liters)",
+       y = "Highway MPG")
+big_epa_cars %>%
+  filter(highwayE == 0, !is.na(fuelCost08)) %>%
+  ggplot(aes(fuelCost08, city08, color = fuelType1)) +
+  geom_point() +
+  expand_limits(x=0) +
+  labs(x = "Annual Cost for Fuel ($/year)",
+       y = "Highway MPG",
+       color = "Fuel")
+```
+
+### Practical Application of Data
+
+What does the data recommend?
+
+From the data visualization, it appears that there are many correlations between the fuel efficiency and descriptors of a vehicle. Since I think statistics are only useful if they're applied, I will use my observations to find a fuel efficient car.
+
+Based off the data, if someone were searching for a fuel efficient gas car they would want a compact to midsize, front-wheel-drive Honda with a engine that has 3 cylinders and less than 2 liters of displacement and runs on regular gas.
+
+I can see how close my observations are by searching for the most fuel efficient car from the data set.
+
+```{r}
+ideal_car <- big_epa_cars %>%
+  select(highway08, make, model, year, VClass, cylinders, displ, fuelType1, highwayE) %>%
+  filter(highwayE == 0) %>%
+  arrange(desc(highway08))
+ideal_car[1,]
+```
+
+The winner is a 2000 Honda Insight that matches all the observations!
+
+```{r, fig.align='center', fig.retina=NULL, out.width=600, echo=FALSE}
+knitr::include_graphics("https://i.kinja-img.com/gawker-media/image/upload/t_ku-xlarge/18ook140h2p3gjpg.jpg")
+```
+
+## CO2 Emissions and Gas Type
+
+```{r, echo=FALSE, fig.align='center'}
+big_epa_cars %>%
+  filter(highwayE == 0, co2 > 0) %>%
+  ggplot(aes(co2, highway08, color = fuelType1)) +
+  geom_point() +
+  expand_limits(x=0) +
+  labs(x = "Co2 Emissions (grams/mile)",
+       y = "Highway MPG",
+       color = "Fuel")
+```
+
+The scatter plot above shows an interesting picture, where all fuel types appear to mixed within each other, except for Diesel perhaps. I will test for there being a difference between the means of Premium and Regular gas. 
+
+I chose to leave out midgrade gas because there are relatively few samples compared to premium and  regular gas. I also chose to leave out Diesel because it is not gasoline.
+
+### Student's T-Test
+
+Is there a difference in co2 emissions between cars that use premium gas and cars that use regular gas?
+
+I will use the Student's T test to see any difference in mean co2 emissions by cars the use regular gasoline and cars that use premium gasoline.
+
+Let $\mu_{p}$, $\mu_{r}$ equal the mean co2 emissions of Premium gas, and Regular gas respectively. Let our hypotheses be:
+$$H_0: \mu_{p}=\mu_{r}\\H_a: \mu_{p}\ne\mu_{r}$$ 
+
+```{r, message=FALSE, fig.align='center'}
+fuelClean <- big_epa_cars %>%
+  select(co2, fuelType1) %>%
+  filter(str_detect(big_epa_cars$fuelType1, "Premium") |
+         str_detect(big_epa_cars$fuelType1, "Regular"),
+         co2 > 0)
+fuelClean %>%
+  select(co2, fuelType1) %>%
+  ggpairs(aes(color = fuelType1), columnLabels = c("CO2 Emissions (g/mile)", "Gas Type"))
+```
+
+A visual analysis indicates reasonably normally distributed data, along with similar box plots. Along with the fact that the sample size is so large (9,280) I will assume normality and proceed with the T-test.
+
+### Test for Equal Variance
+
+```{r}
+var.test(co2~fuelType1, data = fuelClean)
+```
+
+Since the p-value is .1424, we fail to reject the null hypothesis at a 95 percent confidence interval. We will assume the variance is equal in the T-test as it can not be disproved.
+
+```{r}
+t.test(co2~fuelType1, mu=0, alt = "two.sided", conf = 0.95, var.eq=T, paired=F, data = fuelClean)
+```
+
+### Conclusion
+
+With a significant p-value of $2.2e^{-16}$, we reject the null hypothesis. We can say that the true mean of $\mu_{p}$ and $\mu_{r}$ are not the same with 95% confidence. Sample estimates show that cars that require premium gas emit approximately 33 more grams per mile than regular gas vehicles.
+
+## Modeling Highway MPG
+
+Can I make a model to predict fuel efficiency from a few factors in the data?
+
+```{r}
+cleanData <- big_epa_cars %>%
+  select(highway08, city08, displ, co2, cylinders, highwayE) %>%
+  filter(highwayE == 0, co2 >0)
+modelData <- cleanData %>%
+  select(highway08, city08, displ, co2, cylinders)
+modelData %>%
+  ggpairs(columnLabels = c("Highway MPG", "City MPG", "Displacement", "CO2", "Cylinders"))
+```
+
+ All factors appear to have a strong correlations. I will use a log transformation on the factors and re-evaluate.
+ 
+### Data Transformations
+
+```{r}
+modelData$highway08 <- log10(modelData$highway08) 
+modelData$displ <- log10(modelData$displ)
+modelData$city08 <- log10(modelData$city08)
+modelData$co2 <- log10(modelData$co2)
+modelData$cylinders <- log10(modelData$cylinders)
+modelData %>%
+  ggpairs(columnLabels = c("Highway MPG", "City MPG", "Displacement", "CO2", "Cylinders"))
+```
+
+### Modeling
+
+```{r}
+all <- lm(highway08 ~ ., data=modelData)
+both <- step(all, direction='both')
+summary(both)
+both$coefficients
+```
+
+The final model predicts:
+$$Model~Highway~MPG\approx5.969-.547(\log_{10}city08)-0.167(\log_{10}displ)-1.48(\log_{10}CO2)+.0363(\log_{10}cylinders)$$
+Since the models were converted using base ten logarithms, we must convert back to the normal values.
+
+$$Highway~MPG\approx10^{Model~Highway~MPG}$$
+
+### Applying Model
+
+For fun, I will select a random cars from the data that has all the values used by the model, and use the formula from the model to see how close it is to the true Highway MPG of that car.
+
+```{r}
+testModelData<-big_epa_cars%>%
+  select(make, model, year, highway08, city08, displ, co2, cylinders, highwayE) %>%
+  filter(co2>0, highwayE == 0)
+sizeData<- nrow(testModelData)
+randrow<-sample.int(sizeData, 1)
+testModelData[randrow,]
+highwayMPG<-testModelData[randrow,4]
+actual<-highwayMPG$highway08
+cityMPG<-testModelData[randrow,5]
+displacement<-testModelData[randrow,6]
+co2emissions<-testModelData[randrow,7]
+cylinder<-testModelData[randrow,8]
+prediction<- 10^((5.96888507-0.54712485*(log10(cityMPG$city08))-0.01672722*(log10(displacement$displ))-1.48038289*(log10(co2emissions$co2))+0.03634214*(log10(cylinder$cylinders))))
+```
+
+Model Prediction: `r prediction` MPG
+
+True Highway MPG: `r highwayMPG$highway08` MPG
+
+Percentage Error: `r abs((actual - prediction)/(prediction))*100`%
